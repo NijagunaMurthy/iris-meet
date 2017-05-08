@@ -1,49 +1,54 @@
 import React from 'react'
 import PropTypes from 'prop-types'
 import './login-panel.css'
-import {
-  Button
-} from 'react-bootstrap';
+import { Form, Icon, Input, Button, Checkbox } from 'antd';
+const FormItem = Form.Item;
 
-const LoginPanelComponent = ({showUser, userNameText, _onUserNameTextChange, showRoom, roomNameText, _onRoomNameTextChange, onAction}) => (
-  <div id="login-panel">
-    <form className="form">
-      {showUser === true ? <div className="form-group">
-        <input
-          type="text"
-          className="form-control"
-          id="userName"
-          placeholder="User name"
-          value={userNameText}
-          onChange={_onUserNameTextChange}
-        />
-      </div> : null}
-      {showRoom === true ? <div className="form-group">
-        <input
-          type="text"
-          className="form-control"
-          id="roomName"
-          placeholder="Room name"
-          value={roomNameText}
-          onChange={_onRoomNameTextChange.bind(this)}
-        />
-      </div> : null}
-      <Button
-        type="submit"
-        onClick={onAction}
-      >Accept</Button>
-    </form>
-  </div>
-);
-
-LoginPanelComponent.propTypes = {
-  showUser: PropTypes.bool.isRequired,
-  userNameText: PropTypes.string.isRequired,
-  _onUserNameTextChange: PropTypes.func.isRequired,
-  showRoom: PropTypes.bool.isRequired,
-  roomNameText: PropTypes.string.isRequired,
-  _onRoomNameTextChange: PropTypes.func.isRequired,
-  onAction: PropTypes.func.isRequired
+class LoginPanel extends React.Component {
+  handleSubmit = (e) => {
+    e.preventDefault();
+    this.props.form.validateFields((err, values) => {
+      if (!err) {
+        console.log('Received values of form: ', values);
+      }
+    });
+  }
+  render() {
+    const { getFieldDecorator } = this.props.form;
+    return (
+      <Form onSubmit={this.handleSubmit} className="login-form">
+        <FormItem>
+          {getFieldDecorator('userName', {
+            rules: [{ required: true, message: 'Please input your username!' }],
+          })(
+            <Input prefix={<Icon type="user" style={{ fontSize: 13 }} />} placeholder="Username" />
+          )}
+        </FormItem>
+        <FormItem>
+          {getFieldDecorator('password', {
+            rules: [{ required: true, message: 'Please input your Password!' }],
+          })(
+            <Input prefix={<Icon type="lock" style={{ fontSize: 13 }} />} type="password" placeholder="Password" />
+          )}
+        </FormItem>
+        <FormItem>
+          {getFieldDecorator('remember', {
+            valuePropName: 'checked',
+            initialValue: true,
+          })(
+            <Checkbox>Remember me</Checkbox>
+          )}
+          <a className="login-form-forgot" href="">Forgot password</a>
+          <Button type="primary" htmlType="submit" className="login-form-button">
+            Log in
+          </Button>
+          Or <a href="">register now!</a>
+        </FormItem>
+      </Form>
+    );
+  }
 }
 
-export default LoginPanelComponent
+const WrappedLoginPanel = Form.create()(LoginPanel);
+
+export default WrappedLoginPanel;

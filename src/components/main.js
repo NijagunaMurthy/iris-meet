@@ -15,7 +15,11 @@ import './style.css'
 import { changeMainView, changeDominantSpeaker } from '../actions/video-control-actions'
 import { connect } from 'react-redux'
 import { bindActionCreators } from 'redux'
-import { loginUserAsync, leaveRoom } from '../actions/user-actions'
+import { loginUserAsync, leaveRoom } from '../actions/user-actions';
+import {
+  Row,
+  Col
+} from 'antd';
 
 const authUrl = Config.authUrl;
 const appKey = Config.appKey;
@@ -392,12 +396,18 @@ componentWillReceiveProps = (nextProps) => {
           })}
       </HorizontalWrapper>
       {this.state.showUser || this.state.showRoom ?
-        <LoginPanel
-          ref='loginpanel'
-          showRoom={this.state.showRoom}
-          showUser={this.state.showUser}
-          onAction={this._onLoginPanelComplete.bind(this)}
-        /> : null}
+        <Row type="flex" justify="space-around" align="middle">
+          <Col span={8}/>
+          <Col span={8}>
+            <LoginPanel
+              ref='loginpanel'
+              showRoom={this.state.showRoom}
+              showUser={this.state.showUser}
+              onAction={this._onLoginPanelComplete.bind(this)}
+            />
+          </Col>
+          <Col span={8}/>
+        </Row> : null}
       </div>
     );
   }
