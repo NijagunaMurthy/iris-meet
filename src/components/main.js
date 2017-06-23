@@ -19,11 +19,13 @@ import Dialog from 'material-ui/Dialog';
 import CircularProgress from 'material-ui/CircularProgress';
 import {GridList, GridTile} from 'material-ui/GridList';
 import Avatar from '../containers/avatar';
+import AvatarImage from '../components/avatar-image';
 import IconButton from 'material-ui/IconButton';
 import sss from 'material-ui/svg-icons/toggle/star-border';
 import StarBorder from 'material-ui/svg-icons/hardware/headset-mic';
 import Snackbar from 'material-ui/Snackbar';
 import { NameServer } from '../api/nameserver';
+import UserNameBox from '../containers/username-box';
 
 const authUrl = Config.authUrl;
 const appKey = Config.appKey;
@@ -149,7 +151,9 @@ export default connect(mapStateToProps, mapDispatchToProps)(withWebRTC(withRoute
       showFeatureInDev: false,
       showDomSpeakerSnackbar: false,
       myName: "",
-      remoteNames: [],
+      userData: {},
+      resolution: "hd",
+      mutedVideos: [],
     }
 
     this.onDominantSpeakerChanged = this._onDominantSpeakerChanged.bind(this);
@@ -165,6 +169,7 @@ export default connect(mapStateToProps, mapDispatchToProps)(withWebRTC(withRoute
     this.onParticipantVideoMuted = this._onParticipantVideoMuted.bind(this);
     this.onParticipantAudioMuted = this._onParticipantAudioMuted.bind(this);
     this.onUserProfileChange = this._onUserProfileChange.bind(this);
+    this.changeMyName = this.props.setDisplayName.bind(this)
 
     this.timer = setTimeout(() => {
       console.log('inside setTimeOut(), constructor')
@@ -201,7 +206,7 @@ export default connect(mapStateToProps, mapDispatchToProps)(withWebRTC(withRoute
     this.props.addWebRTCListener(WebRTCConstants.WEB_RTC_ON_USER_PROFILE_CHANGE, this.onUserProfileChange);
 
     const requestedResolution = getQueryParameter('resolution');
-    console.log(requestedResolution);
+    console.log("Resolution: ", requestedResolution);
     console.log('roomName: ' + this.props.params.roomname);
     let showRoom = false;
     let showUser = false;
@@ -391,47 +396,58 @@ _onReceivedNewId(data) {
     }
   }
 
-  _onParticipantVideoMuted(jid, muted){
-    console.log("_onParticipantVideoMuted jid " + jid + " muted "+muted);
+  _isRemoteVideoMuted(fullJid) {
+    let muted = false;
+    if (fullJid && this.state.userData[this._truncateJid(fullJid)]) {
+      console.log("Returning muted: ", this.state.userData[this._truncateJid(fullJid)].videoMuted )
+      muted = this.state.userData[this._truncateJid(fullJid)].videoMuted;
+    }
+    console.log("returning false")
+    return muted
+  }
+
+  _onParticipantVideoMuted(videoInfo){
+    console.log("_onParticipantVideoMuted jid " + videoInfo.jid + " muted "+ videoInfo.muted);
+
+    let profiles = this.state.userData;
+    profiles[this._truncateJid(videoInfo.jid)] ? profiles[this._truncateJid(videoInfo.jid)].videoMuted = videoInfo.muted : null;
+    this.setState({
+      userData: profiles
+    })
   }
 
   _onParticipantAudioMuted(jid, muted){
     console.log("_onParticipantAudioMuted jid " + jid + " muted "+muted);
   }
 
-  _onUserProfileChange(profile){
+  _onUserProfileChange(profile) {
     console.log('_onUserProfileChange in the client\nFull Jid before truncation: ', profile.jid)
     console.log("Name: ", profile.name);
+    console.log("Profile: ", profile)
     // this function is called when:
     //   1) remote participant is first detected upon joining the room
     //   2) remote participant changes name
     // when either of these events occurs, update the remoteNames state
     // Lookup of names by jid in the horizontal box part can remain the same
 
-    let names = this.state.remoteNames;
-    //check if this jid is already in remoteNames. If it is, update the object
-    let userFound = false;
-    for (var i in names) {
-      if (names[i].userJid == profile.jid) {
-        console.log("Found user with this jid. Updating name from ", names[i].userName, " to ", profile.name)
-        names[i].userName = profile.name;
-        userFound = true;
-        break;
-      }
-    }
+    let profiles = this.state.userData;
 
-    //if not found, create a new user object and pass it to remoteNames
+    console.log("ALL PROFILES: ", profiles)
+
+    const userFound = profiles[this._truncateJid(profile.jid)] ? true : false;
+
     if (!userFound) {
-      console.log("New user joined. Adding ", profile.name, " to remoteNames")
-      let newNameObject = {userName: profile.name, userJid: this._truncateJid(profile.jid)};
-      names.push(newNameObject);
+      //put user's name into the object
+      profiles[this._truncateJid(profile.jid)] = {"userName": profile.name, "videoMuted": false}
+    } else {
+      //update user's name
+      profiles[this._truncateJid(profile.jid)].userName = profile.name
     }
 
-    //update state
-    //UNCOMMENT THIS!!
-    // this.setState({
-    //   remoteNames: names
-    // })
+    // update state with the new profile
+    this.setState({
+      userData: profiles
+    })
   }
 
   _userLoggedIn() {
@@ -439,30 +455,18 @@ _onReceivedNewId(data) {
       showRoom: false,
       showUser: false,
     }, () => {
-      let requestedResolution = getQueryParameter('resolution');
-      console.log(requestedResolution);
+
+      //let requestedResolution = getQueryParameter('resolution');
+      let requestedResolution = localStorage.getItem('irisMeet.resolution')
+      console.log("requested resolution: ", requestedResolution);
       if (!validResolution(requestedResolution)) {
         console.log('Requested resolution is not valid.  Switching to default hd.');
-        requestedResolution = '640';
+        requestedResolution = 'hd';
       }
       getRoomId(this.props.roomName, this.props.accessToken)
       .then((response) => {
         console.log(response);
         const roomId = response.room_id;
-        //
-        //
-        // this.props.initializeWebRTC(this.props.userName, this.props.routingId,
-        //   this.props.roomName,
-        //   roomId,
-        //   this.props.decodedToken.payload['domain'].toLowerCase(),
-        //   {
-        //     eventManagerUrl: Config.eventManagerUrl,
-        //     notificationServer: Config.notificationServer },
-        //     this.props.accessToken,
-        //     '640',
-        //     true,
-        //     true
-        //   );
 
           let config = {
             userName: this.props.userName,
@@ -471,7 +475,7 @@ _onReceivedNewId(data) {
             domain: this.props.decodedToken.payload['domain'].toLowerCase(),
             token: this.props.accessToken,
             routingId: this.props.routingId,
-            resolution: 'hd',
+            resolution: requestedResolution,
             hosts: {
               eventManagerUrl: Config.eventManagerUrl,
               notificationServer: Config.notificationServer
@@ -479,8 +483,6 @@ _onReceivedNewId(data) {
             videoCodec: 'h264'
           }
           this.props.initializeWebRTC(config)
-
-
       })
     });
   }
@@ -510,6 +512,7 @@ _displayDialer() {
       });
       localStorage.setItem('irisMeet.routingId', routingId);
     }
+
     const userName = this.refs.loginpanel.userName ? this.refs.loginpanel.userName : localStorage.getItem('irisMeet.userName');
     const roomName = this.refs.loginpanel.roomName ? this.refs.loginpanel.roomName : this.props.params.roomname;
     localStorage.setItem('irisMeet.userName', userName);
@@ -517,9 +520,10 @@ _displayDialer() {
     //now that we have both username and roomname, update entry in the IDS
 
     const hostname = window.location.origin;
-    window.location.assign(hostname + '/' + roomName);
-  }
+    localStorage.setItem('irisMeet.resolution', this.refs.loginpanel.resolution)
 
+    window.location.assign(hostname + '/' + roomName)
+  }
 
   _onLocalAudioMute(isMuted) {
     this.props.onAudioMute();
@@ -729,24 +733,6 @@ _getUserName(userJid, roomname) {
     );
 }
 
-_findUserName(namesArray, jid) {
-  jid = jid.replace(/\//g, '_')
-  console.log("Looking for jid : ", jid)
-  console.log("in array: ")
-  console.log(namesArray)
-  let userObject = namesArray.filter(function(obj) {
-    return obj.userJid === jid
-  })
-  //it is possible that more than one object with a given jid are found.
-  //Ignore all results past the first one, this won't be an issue with actual
-  //calls (unless the user opens the same room several times in different browsers/incognito
-  //with different user names, which is unlikely)
-  if (userObject.length !== 0) {
-    console.log("Object valid. Name is : ", userObject[0].userName)
-  }
-  return userObject[0] ? userObject[0].userName : null
-}
-
 _truncateJid(jid) {
   //remote the roomID part of the jid, and return just the user part
   return jid.substring(jid.indexOf("/") + 1, jid.length)
@@ -786,11 +772,24 @@ _deleteRoomData(roomname) {
   console.log("Clear all user data from a given room when everyone leaves")
 }
 
+_onResolutionChoice(res) {
+  this.setState({resolution: res}, () => {
+    console.log("CHOSEN RESOLUTION: ", this.state.resolution)
+    localStorage.setItem('irisMeet.resolution', this.state.resolution);
+   })
+}
+
+_setDisplayName(name) {
+  this.changeMyName(name);
+  localStorage.setItem('irisMeet.userName', name);
+}
+
   render() {
     const this_main = this;
     console.log("Enabledomswitch: ", this.props.enableDomSwitch)
-    console.log("Remote names main: ", this.state.remoteNames)
+    console.log("Remote names main: ", this.state.userData)
     console.log("Remote videos main: ", this.props.remoteVideos)
+    console.log("this props connection: ", this.props.connection)
     return (
       <div onMouseMove={this._onMouseMove.bind(this)}>
         <Snackbar
@@ -838,19 +837,23 @@ _deleteRoomData(roomname) {
             enableDomSwitchFunc={this.enableDomSwitching.bind(this)}
           /> : null}
 
-            <MainVideo className={"main_video"}>
-              {
-                this.props.videoType === 'remote' && true ?
-                <RemoteVideo
-                  video={this.props.connection}
-                /> : null
-              }
-              {this.props.videoType === 'local' && true ?
-                <LocalVideo
-                  video={this.props.localVideos[0]}
-                /> : null
-              }
-            </MainVideo>
+
+          <MainVideo className={"main_video"}>
+            {
+              this.props.videoType === 'remote' && true ?
+                <RemoteVideo video={this.props.connection} />
+              : null
+            }
+
+            {this.props.videoType === 'local' && true ?
+              <LocalVideo
+                video={this.props.localVideos[0]}
+              /> : null
+            }
+          </MainVideo>
+
+
+
 
           <section className={this.state.isVideoBarHidden ? "footer hideFooter" : "footer showFooter"} >
             <div className={"localVideo footer-item"}>
@@ -859,7 +862,7 @@ _deleteRoomData(roomname) {
                   style={this.props.localVideos.length > 0 ? styles.localTile : null}
                   key={'localVideo'}
                   className={'gridTileClass'}
-                  title={this.state.myName}
+                  title={<UserNameBox setDisplayName={this._setDisplayName.bind(this)} name={localStorage.getItem('irisMeet.userName')} />}
                   containerElement={'HorizontalBox'}
                   actionIcon={<IconButton><StarBorder color="rgb(0, 188, 212)" /></IconButton>}
                   titleStyle={styles.titleStyle}
@@ -899,7 +902,8 @@ _deleteRoomData(roomname) {
             <GridList className={"remoteGrid"} style={styles.gridList} cols={2.2}>
               {this.props.remoteVideos.map((connection) => {
                 if (connection) {
-                  //UNCOMMENT THIS!! let name = this._findUserName(this.state.remoteNames, this._truncateJid(connection.participantJid))
+                  let name = this.state.userData[this._truncateJid(connection.participantJid)] ? this.state.userData[this._truncateJid(connection.participantJid)].userName : null;
+                  console.log("USERNAME TO DISPLAY: ", name)
                   let displayHorizontalBox = (!this._isDominant(connection.id) && this.props.remoteVideos.length > 1) || !this.props.enableDomSwitch;
                   console.log("Display HB for ", connection.id, "? -- ", displayHorizontalBox)
                   return displayHorizontalBox ? (
@@ -965,6 +969,7 @@ _deleteRoomData(roomname) {
           showUser={this.state.showUser}
           onAction={this._onLoginPanelComplete.bind(this)}
           displayDialer={this._displayDialer.bind(this)}
+          onResolutionChoice={this._onResolutionChoice.bind(this)}
         /> : null}
       </div>
     );
