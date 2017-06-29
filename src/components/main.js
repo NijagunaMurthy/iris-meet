@@ -1,9 +1,7 @@
 import React from 'react';
 import MainVideo from './main-video';
 import MeetToolbar from '../containers/meet-toolbar';
-import HorizontalWrapper from './horizontal-wrapper';
 import HorizontalBox from '../containers/horizontal-box';
-import BlackBox from '../containers/black-box'
 import LoginPanel from '../containers/login-panel';
 import { withRouter } from 'react-router';
 import withWebRTC, { LocalVideo, RemoteVideo, WebRTCConstants } from 'iris-react-webrtc';
@@ -11,6 +9,7 @@ import Config from '../../config.json';
 import getQueryParameter from '../utils/query-params';
 import validResolution from '../utils/verify-resolution';
 import { getRoomId } from '../api/RoomId';
+import { getChatMessages } from '../api/get-chat-messages';
 import './style.css';
 import { changeMainView, changeDominantSpeaker, changeExtInstalledState } from '../actions/video-control-actions';
 import { connect } from 'react-redux';
@@ -20,12 +19,16 @@ import CircularProgress from 'material-ui/CircularProgress';
 import {GridList, GridTile} from 'material-ui/GridList';
 import Avatar from '../containers/avatar';
 import AvatarImage from '../components/avatar-image';
-import IconButton from 'material-ui/IconButton';
-import sss from 'material-ui/svg-icons/toggle/star-border';
-import StarBorder from 'material-ui/svg-icons/hardware/headset-mic';
 import Snackbar from 'material-ui/Snackbar';
 import { NameServer } from '../api/nameserver';
 import UserNameBox from '../containers/username-box';
+import VideoActionIcons from '../containers/video-action-icons';
+import Drawer from 'material-ui/Drawer';
+import MenuItem from 'material-ui/MenuItem';
+import RaisedButton from 'material-ui/RaisedButton';
+import ChatBox from './chat/chat-box';
+import ExitButton from 'material-ui/svg-icons/content/clear';
+import IconButton from 'material-ui/IconButton';
 
 const authUrl = Config.authUrl;
 const appKey = Config.appKey;
@@ -65,7 +68,9 @@ const styles = {
     color: 'rgb(0, 188, 212)',
     fontSize: '12px',
     marginBottom: '0px',
-    minWidth: '160px'
+    minWidth: '160px',
+    //test!!!!
+    display: 'flex'
   },
   gridTile: {
     width: '160px',
@@ -85,13 +90,6 @@ const styles = {
   }
 };
 
-const styleTest = {
-  height: '120px',
-  width: '140px',
-  position: 'relative'
-}
-
-
 const mapStateToProps = (state) => {
   return {
     videoIndex: state.videoReducer.videoIndex,
@@ -104,6 +102,7 @@ const mapStateToProps = (state) => {
     decodedToken: state.userReducer.decodedToken,
     showSpinner: state.userReducer.showSpinner,
     dominantSpeakerIndex: state.videoReducer.dominantSpeakerIndex,
+    dominantSpeakerJid: state.videoReducer.dominantSpeakerJid,
     screenShareExtInstalled: state.videoReducer.screenShareExtInstalled,
     enableDomSwitch: state.videoReducer.enableDomSwitch,
   }
@@ -121,8 +120,8 @@ const mapDispatchToProps = (dispatch, ownProps) => {
     leaveRoom: () => {
       dispatch(leaveRoom())
     },
-    changeDominantSpeaker: (dominantSpeakerIndex) => {
-      dispatch(changeDominantSpeaker(dominantSpeakerIndex))
+    changeDominantSpeaker: (dominantSpeakerIndex, dominantSpeakerJid) => {
+      dispatch(changeDominantSpeaker(dominantSpeakerIndex, dominantSpeakerJid))
     },
     changeExtensionStatus: (isExtInstalled) => {
       dispatch(changeExtInstalledState(isExtInstalled))
@@ -154,6 +153,9 @@ export default connect(mapStateToProps, mapDispatchToProps)(withWebRTC(withRoute
       userData: {},
       resolution: "hd",
       mutedVideos: [],
+      drawerOpen: false,
+      chatMessages: [],
+      hasUnreadMessages: false,
     }
 
     this.onDominantSpeakerChanged = this._onDominantSpeakerChanged.bind(this);
@@ -162,6 +164,8 @@ export default connect(mapStateToProps, mapDispatchToProps)(withWebRTC(withRoute
     this.onParticipantLeft = this._onParticipantLeft.bind(this);
     this.startScreenShare = this.props.startScreenshare.bind(this);
     this.endScreenshare = this.props.endScreenshare.bind(this);
+    this.muteRemoteAudio = this.props.muteParticipantAudio.bind(this);
+    this.muteRemoteVideo = this.props.muteParticipantVideo.bind(this);
     this.onReceivedNewId = this._onReceivedNewId.bind(this);
     this.extInstalled = this._isExtInstalled.bind(this);
     this.unimplementedButtonToggle = this.unimplementedButtonToggle.bind(this);
@@ -169,7 +173,10 @@ export default connect(mapStateToProps, mapDispatchToProps)(withWebRTC(withRoute
     this.onParticipantVideoMuted = this._onParticipantVideoMuted.bind(this);
     this.onParticipantAudioMuted = this._onParticipantAudioMuted.bind(this);
     this.onUserProfileChange = this._onUserProfileChange.bind(this);
-    this.changeMyName = this.props.setDisplayName.bind(this)
+    this.changeMyName = this.props.setDisplayName.bind(this);
+    this.sendChatMessage = this.props.sendChatMessage.bind(this);
+    this.onChatMessage = this.onChatMessage.bind(this);
+    this.handleDrawerToggle = this._handleDrawerToggle.bind(this);
 
     this.timer = setTimeout(() => {
       console.log('inside setTimeOut(), constructor')
@@ -196,6 +203,7 @@ export default connect(mapStateToProps, mapDispatchToProps)(withWebRTC(withRoute
 
 
   componentDidMount() {
+    //this.props.addWebRTCListener(WebRTCConstants.WEB_RTC_ON_SESSION_CREATED)
     this.props.addWebRTCListener(WebRTCConstants.WEB_RTC_ON_DOMINANT_SPEAKER_CHANGED, this.onDominantSpeakerChanged);
     this.props.addWebRTCListener(WebRTCConstants.WEB_RTC_ON_LOCAL_VIDEO, this.onLocalVideo);
     this.props.addWebRTCListener(WebRTCConstants.WEB_RTC_ON_REMOTE_VIDEO, this.onRemoteVideo);
@@ -204,6 +212,7 @@ export default connect(mapStateToProps, mapDispatchToProps)(withWebRTC(withRoute
     this.props.addWebRTCListener(WebRTCConstants.WEB_RTC_ON_PARTICIPANT_VIDEO_MUTED, this.onParticipantVideoMuted);
     this.props.addWebRTCListener(WebRTCConstants.WEB_RTC_ON_PARTICIPANT_AUDIO_MUTED, this.onParticipantAudioMuted);
     this.props.addWebRTCListener(WebRTCConstants.WEB_RTC_ON_USER_PROFILE_CHANGE, this.onUserProfileChange);
+    this.props.addWebRTCListener(WebRTCConstants.WEB_RTC_ON_CHAT_MESSAGE_RECEIVED, this.onChatMessage);
 
     const requestedResolution = getQueryParameter('resolution');
     console.log("Resolution: ", requestedResolution);
@@ -253,10 +262,6 @@ export default connect(mapStateToProps, mapDispatchToProps)(withWebRTC(withRoute
 componentWillReceiveProps = (nextProps) => {
   //Initially, the accessToken is undefined.
   //It receives a value when the user is logged in
-  console.log("Will receive props! Current props: ")
-  console.log(this.props)
-  console.log("Next props: ")
-  console.log(nextProps)
 
   if (this.props.localVideos.length === 0 && nextProps.localVideos.length > 0) {
     console.log("Local video loaded. Stop displaying the spinner")
@@ -310,6 +315,7 @@ componentWillReceiveProps = (nextProps) => {
     this.props.removeWebRTCListener(WebRTCConstants.WEB_RTC_ON_LOCAL_VIDEO, this.onLocalVideo);
     this.props.removeWebRTCListener(WebRTCConstants.WEB_RTC_ON_REMOTE_VIDEO, this.onRemoteVideo);
     this.props.removeWebRTCListener(WebRTCConstants.WEB_RTC_ON_REMOTE_PARTICIPANT_LEFT, this.onParticipantLeft);
+    this.props.removeWebRTCListener(WebRTCConstants.WEB_RTC_ON_CHAT_MESSAGE_RECEIVED, this._onChatMessageReceived);
     this.setState({
       showRoom: false,
       showUser: false,
@@ -345,46 +351,66 @@ _onReceivedNewId(data) {
 
   _onParticipantLeft(participantInfo) {
     console.log('Remote participant left: ', participantInfo);
-    console.log(this.props.remoteVideos.length);
-    if (this.props.remoteVideos.length === 0) {
-      if (this.props.localVideos.length > 0) {
+
+    if (this.props.remoteVideos.length === 0 && this.props.localVideos.length > 0) {
         // no participants so go back to local video
-        console.log('Remote participant back to local');
+        console.log('No remote videos left. Switch main screen to local video');
         this.props.VideoControl('local', this.props.localVideos[0].id, this.props.dominantSpeakerIndex, false, this.props.localVideos, this.props.remoteVideos, this.props.enableDomSwitch)
-      }
+        return
     }
 
-    if (this.state.mainVideoConnection.connection &&
-        this.state.mainVideoConnection.connection.participantJid === participantInfo.participantJid) {
-      if (this.props.localVideos.length > 0) {
-        // if the participant who left was on main screen replace it with local
-        // video
-        this.props.VideoControl('local', this.props.localVideos[0].id, this.props.dominantSpeakerIndex, false, this.props.localVideos, this.props.remoteVideos, this.props.enableDomSwitch)
-      }
+    //if there are remote videos, check if it was the dominant speaker that left
+    //if so, switch to my own local video. Otherwise, do nothing
+
+    //const matchedConnection = this._findDominantSpeaker(participantInfo.participantJid);
+    if (participantInfo.participantJid === this.props.dominantSpeakerJid) {
+      //if #remote videos is 1, switch to the other participant. Otherwise, switch to local
+      const type = this.props.remoteVideos.length === 1 ? 'remote' : 'local';
+      const id = type === 'remote' ? this.props.remoteVideos[0].id : this.props.localVideos[0].id;
+      console.log("Dominant speaker left. Switching to " + type + " video");
+      this.props.VideoControl(type, id, this.props.dominantSpeakerIndex, false, this.props.localVideos, this.props.remoteVideos, this.props.enableDomSwitch);
+    } else {
+      console.log("Non-dominant speaker left.")
     }
   }
 
-  _onDominantSpeakerChanged(dominantSpeakerEndpoint) {
-    //let participant = track.getParticipantId();
-    //let baseId = participant.replace(/(-.*$)|(@.*$)/,'');
-    console.log("Got a new dominant speaker notification\nLooking through remotes...")
-
-    //extract the part of dominantSpeakerEndpoint to use for comparison with connection id
-    const dom = dominantSpeakerEndpoint.substring(0, dominantSpeakerEndpoint.lastIndexOf("@"));
+  _findDominantSpeaker(jid) {
+    const dom = jid.substring(0, jid.lastIndexOf("@"));
     const matchedConnection = this.props.remoteVideos.find((connection) => {
       let participantId = connection.participantJid;
       //first index in the next line may need to be 0 after the SDK update 6/15/2017
-      participantId = participantId.substring(participantId.indexOf("/")+1, participantId.indexOf("@iris-meet.comcast.com"))
-      const endPoint = participantId.substring(participantId.lastIndexOf("/")+1)
+      console.log("Checking this participantId: ", participantId)
+      const endPoint = participantId.substring(0, participantId.indexOf("@iris-meet.comcast.com"))
+      console.log("after truncation: ", endPoint)
       console.log("endpoint and dom: " + endPoint + ", " + dom)
       return endPoint === dom;
       });
 
+    return matchedConnection ? matchedConnection : null
+  }
+
+
+  _onDominantSpeakerChanged(dominantSpeakerEndpoint) {
+    //let participant = track.getParticipantId();
+    //let baseId = participant.replace(/(-.*$)|(@.*$)/,'');
+    console.log("Got a new dominant speaker notification\nLooking through remotes for: ", dominantSpeakerEndpoint)
+    const matchedConnection = this._findDominantSpeaker(dominantSpeakerEndpoint);
+    // //extract the part of dominantSpeakerEndpoint to use for comparison with connection id
+    // const dom = dominantSpeakerEndpoint.substring(0, dominantSpeakerEndpoint.lastIndexOf("@"));
+    // const matchedConnection = this.props.remoteVideos.find((connection) => {
+    //   let participantId = connection.participantJid;
+    //   //first index in the next line may need to be 0 after the SDK update 6/15/2017
+    //   console.log("Checking this participantId: ", participantId)
+    //   const endPoint = participantId.substring(0, participantId.indexOf("@iris-meet.comcast.com"))
+    //   console.log("after truncation: ", endPoint)
+    //   console.log("endpoint and dom: " + endPoint + ", " + dom)
+    //   return endPoint === dom;
+    //   });
     if (matchedConnection) {
       console.log("New dominant speaker among remotes: ", matchedConnection.participantJid)
       //entering this if statement implies that the dominant speaker is remote
       //no further checks are necessary
-      this.props.changeDominantSpeaker(matchedConnection.id)
+      this.props.changeDominantSpeaker(matchedConnection.id, matchedConnection.participantJid)
       this.props.VideoControl('remote', matchedConnection.id, this.props.dominantSpeakerIndex, false, this.props.localVideos, this.props.remoteVideos, this.props.enableDomSwitch)
 
     } else if (this.props.localVideos.length > 0) {
@@ -392,48 +418,45 @@ _onReceivedNewId(data) {
       //no remote participants found so assume it is local speaker
       //change dominant speaker but don't change main view, keep displaying
       //the most recent remote dominant speaker
-      this.props.changeDominantSpeaker(this.props.localVideos[0].id)
+      this.props.changeDominantSpeaker(this.props.localVideos[0].id, 'local')
     }
   }
 
-  _isRemoteVideoMuted(fullJid) {
+  _isRemoteVideoMuted(connection) {
     let muted = false;
-    if (fullJid && this.state.userData[this._truncateJid(fullJid)]) {
-      console.log("Returning muted: ", this.state.userData[this._truncateJid(fullJid)].videoMuted )
-      muted = this.state.userData[this._truncateJid(fullJid)].videoMuted;
+    console.log("Remote video muted: ", connection);
+    if (connection && connection.participantJid && this.state.userData[this._truncateJid(connection.participantJid)]) {
+      console.log("Muted? --> ", this.state.userData[this._truncateJid(connection.participantJid)].videoMuted )
+      muted = this.state.userData[this._truncateJid(connection.participantJid)].videoMuted;
     }
-    console.log("returning false")
     return muted
   }
 
   _onParticipantVideoMuted(videoInfo){
-    console.log("_onParticipantVideoMuted jid " + videoInfo.jid + " muted "+ videoInfo.muted);
+    console.log("_onParticipantVideoMuted client. \nJid: ", videoInfo.jid, "\nMuted: ", videoInfo.muted);
 
     let profiles = this.state.userData;
-    profiles[this._truncateJid(videoInfo.jid)] ? profiles[this._truncateJid(videoInfo.jid)].videoMuted = videoInfo.muted : null;
+    profiles[this._truncateJid(videoInfo.jid)] ? profiles[this._truncateJid(videoInfo.jid)].videoMuted = videoInfo.muted : console.log("no such profile: ", videoInfo.jid);
     this.setState({
       userData: profiles
-    })
+    }, () => {console.log("Updated profiles videomute: ", this.state.userData)})
   }
 
-  _onParticipantAudioMuted(jid, muted){
-    console.log("_onParticipantAudioMuted jid " + jid + " muted "+muted);
+  _onParticipantAudioMuted(audioInfo){
+    console.log("_onParticipantAudioMuted: ", audioInfo)
   }
 
   _onUserProfileChange(profile) {
     console.log('_onUserProfileChange in the client\nFull Jid before truncation: ', profile.jid)
     console.log("Name: ", profile.name);
     console.log("Profile: ", profile)
-    // this function is called when:
+    // this function currently only takes care of the names. It's is called when:
     //   1) remote participant is first detected upon joining the room
     //   2) remote participant changes name
     // when either of these events occurs, update the remoteNames state
     // Lookup of names by jid in the horizontal box part can remain the same
 
     let profiles = this.state.userData;
-
-    console.log("ALL PROFILES: ", profiles)
-
     const userFound = profiles[this._truncateJid(profile.jid)] ? true : false;
 
     if (!userFound) {
@@ -447,7 +470,44 @@ _onReceivedNewId(data) {
     // update state with the new profile
     this.setState({
       userData: profiles
+    }, console.log("Updated names/profiles: ", this.state.userData))
+
+    //now also change names in the chat
+    const messages = this.state.chatMessages.slice();
+    let modified = false;
+    const this_main = this;
+    messages.forEach(function(message) {
+      if(message.senderJid === this_main._truncateJid(profile.jid)) {
+        message.sender = profile.name;
+        modified = true;
+      }
     })
+    modified ? this.setState({chatMessages: messages}, console.log("Updated name: updated names in the chat")) : console.log("Updated name: no sender names changed")
+
+  }
+
+  onChatMessage(messageJson) {
+    if (!this.state.drawerOpen) {
+      this.setState({
+        hasUnreadMessages: true
+      })
+    }
+
+    //identify sender
+    const jid = this._truncateJid(messageJson.from);
+    const sender = this.state.userData[jid].userName;
+    //get timestamp
+    const clientDate = new Date();
+
+    let newMessage = {
+      id: this.state.chatMessages.length + 1,
+      timestamp: clientDate,
+      senderJid: jid,
+      sender: sender,
+      text: messageJson.message
+    }
+    this.setState({ chatMessages: [ ...this.state.chatMessages, newMessage ] });
+
   }
 
   _userLoggedIn() {
@@ -455,7 +515,8 @@ _onReceivedNewId(data) {
       showRoom: false,
       showUser: false,
     }, () => {
-
+      const domain = this.props.decodedToken.payload['domain'].toLowerCase();
+      let roomIdResponse = null;
       //let requestedResolution = getQueryParameter('resolution');
       let requestedResolution = localStorage.getItem('irisMeet.resolution')
       console.log("requested resolution: ", requestedResolution);
@@ -463,10 +524,13 @@ _onReceivedNewId(data) {
         console.log('Requested resolution is not valid.  Switching to default hd.');
         requestedResolution = 'hd';
       }
+      const this_main = this;
       getRoomId(this.props.roomName, this.props.accessToken)
       .then((response) => {
-        console.log(response);
+        console.log("Response with roomid: ", response);
         const roomId = response.room_id;
+        roomIdResponse = roomId;
+        this.setState({roomId: roomId })
 
           let config = {
             userName: this.props.userName,
@@ -483,8 +547,47 @@ _onReceivedNewId(data) {
             videoCodec: 'h264'
           }
           this.props.initializeWebRTC(config)
+          getChatMessages(config.roomName, this.props.accessToken, 100)
+          .then((response) => {
+            console.log("Response from chat messages storage: ", response);
+            response.forEach(function(item) {
+              if (item.event_type === "chat") {
+                const message = JSON.parse(item.userdata).data.text;
+                const senderJid = item.event_deposited_by;
+                const timestamp = item.time_posted;
+                this_main._addMessageToState(message, senderJid, timestamp)
+                //Tell user that there are unread messages from before user joined?
+                //this_main.setState({hasUnreadMessages: true})
+                console.log("this message: ", message)
+                console.log("from: ", senderJid)
+                console.log("timestamp: ", timestamp)
+
+              }
+            })
+          })
+          .catch(
+            error => {console.log("Something went bad...", error)}
+          )
       })
+
     });
+  }
+
+  _addMessageToState(message, senderJid, timestamp) {
+    console.log("inside add message");
+    console.log("Jid before: ", senderJid);
+    const jid = this._truncateJidFromEVM(senderJid);
+    console.log("jid after: ", jid)
+    const senderName = this.state.userData[jid] ? this.state.userData[jid].userName : "Iris user (left room)"
+    let newMessage = {
+      id: this.state.chatMessages.length + 1,
+      timestamp: new Date(timestamp),
+      senderJid: jid,
+      sender: senderName,
+      text: message
+    }
+    console.log("adding message to state: ", newMessage);
+    this.setState({chatMessages: [newMessage, ...this.state.chatMessages]})
   }
 
 
@@ -516,6 +619,7 @@ _displayDialer() {
     const userName = this.refs.loginpanel.userName ? this.refs.loginpanel.userName : localStorage.getItem('irisMeet.userName');
     const roomName = this.refs.loginpanel.roomName ? this.refs.loginpanel.roomName : this.props.params.roomname;
     localStorage.setItem('irisMeet.userName', userName);
+    this.setState({myName: userName})
 
     //now that we have both username and roomname, update entry in the IDS
 
@@ -735,7 +839,12 @@ _getUserName(userJid, roomname) {
 
 _truncateJid(jid) {
   //remote the roomID part of the jid, and return just the user part
-  return jid.substring(jid.indexOf("/") + 1, jid.length)
+  //return jid.substring(jid.indexOf("/") + 1, jid.length)
+  return jid.substring(0, jid.indexOf("@"))
+}
+
+_truncateJidFromEVM(jid) {
+  return jid.substring(0, jid.indexOf("@"))
 }
 
 _setUserName(userJid, roomname, username) {
@@ -782,16 +891,91 @@ _onResolutionChoice(res) {
 _setDisplayName(name) {
   this.changeMyName(name);
   localStorage.setItem('irisMeet.userName', name);
+  this.setState({myName: name})
+}
+
+_remoteVideoAndImage() {
+  return (<div>
+            <RemoteVideo video={this.props.connection} />
+            <img src="https://physics.tau.ac.il/sites/exactsci_en.tau.ac.il/files/styles/faculty_banner_729x359/public/astrophysics_home_page_729X359-2_0.jpg?itok=xQl7j2W9" />
+          </div>)
+}
+
+_localVideoAndImage() {
+  return (<div>
+            <LocalVideo video={this.props.localVideos[0]} />
+            <img src="https://physics.tau.ac.il/sites/exactsci_en.tau.ac.il/files/styles/faculty_banner_729x359/public/astrophysics_home_page_729X359-2_0.jpg?itok=xQl7j2W9" />
+          </div>)
+}
+
+_renderMainVideo(videoType, remoteMuted) {
+  const show = true;
+  const showPic = false;
+
+  if (videoType === "remote" && show) {
+    console.log("Rendering the main video. videoType: ", videoType, "muted: ", remoteMuted)
+    return (
+      <div>
+      <RemoteVideo video={this.props.connection} />
+      {remoteMuted && showPic ?
+        <AvatarImage hash={this.props.connection.participantJid} />
+      : null }
+    </div>
+    )
+  } else if (videoType === "local" && show) {
+    console.log("Rendering the main video. videoType: ", videoType, "muted: ", this.state.isVideoMuted)
+      return (
+        <div>
+          <LocalVideo video={this.props.localVideos[0]} />
+          {this.state.isVideoMuted ?
+            <AvatarImage hash={this.props.connection.id} />
+          : null }
+        </div>
+    )
+  }
+}
+
+_handleDrawerToggle = () => this.setState({drawerOpen: !this.state.drawerOpen, hasUnreadMessages: false})
+
+_sendMessage(jid, message) {
+  const clientDate = new Date();
+  console.log("new date: ", clientDate)
+  console.log("get time: ", clientDate.getTime())
+  const exp = new Date(clientDate.getTime())
+  console.log("and now: ", exp)
+  let newMessage = {
+    id: this.state.chatMessages.length + 1,
+    timestamp: clientDate,
+    sender: this.state.myName,
+    text: message
+  }
+  this.setState({ chatMessages: [ ...this.state.chatMessages , newMessage] })
+  this.sendChatMessage(jid, message)
+  // let out = document.getElementById("chat-messages-id");
+  // if (out) {
+  //   out.scrollTop = out.scrollHeight;
+  // }
 }
 
   render() {
+
+    console.log("Dominant speaker ID: ", this.props.dominantSpeakerIndex)
+    console.log("remote videos main: ", this.props.remoteVideos)
     const this_main = this;
-    console.log("Enabledomswitch: ", this.props.enableDomSwitch)
-    console.log("Remote names main: ", this.state.userData)
-    console.log("Remote videos main: ", this.props.remoteVideos)
-    console.log("this props connection: ", this.props.connection)
+    const messages = this.state.chatMessages.slice()
     return (
       <div onMouseMove={this._onMouseMove.bind(this)}>
+        <div>
+          <Drawer open={this.state.drawerOpen}>
+            <IconButton>
+              <ExitButton onClick={this._handleDrawerToggle} />
+            </IconButton>
+            <ChatBox name={this.state.myName}
+                     myId={this.props.localVideos[0] ? this.props.localVideos[0].id : null}
+                     messages={messages.reverse()}
+                     sendChatMessage={this._sendMessage.bind(this)}/>
+          </Drawer>
+        </div>
         <Snackbar
           open={this.state.showFeatureInDev}
           message="This feature is currently in development"
@@ -835,25 +1019,16 @@ _setDisplayName(name) {
             showInDev={this.unimplementedButtonToggle.bind(this)}
             domSpeakerSwitchEnabled={this.props.enableDomSwitch !== undefined ? this.props.enableDomSwitch : true}
             enableDomSwitchFunc={this.enableDomSwitching.bind(this)}
+            handleDrawerToggle={this.handleDrawerToggle}
+            hasUnreadMessages={this.state.hasUnreadMessages}
           /> : null}
 
 
           <MainVideo className={"main_video"}>
-            {
-              this.props.videoType === 'remote' && true ?
-                <RemoteVideo video={this.props.connection} />
-              : null
-            }
-
-            {this.props.videoType === 'local' && true ?
-              <LocalVideo
-                video={this.props.localVideos[0]}
-              /> : null
-            }
+            <div>
+              {this._renderMainVideo(this.props.videoType, this._isRemoteVideoMuted(this.props.connection))}
+            </div>
           </MainVideo>
-
-
-
 
           <section className={this.state.isVideoBarHidden ? "footer hideFooter" : "footer showFooter"} >
             <div className={"localVideo footer-item"}>
@@ -862,9 +1037,11 @@ _setDisplayName(name) {
                   style={this.props.localVideos.length > 0 ? styles.localTile : null}
                   key={'localVideo'}
                   className={'gridTileClass'}
-                  title={<UserNameBox setDisplayName={this._setDisplayName.bind(this)} name={localStorage.getItem('irisMeet.userName')} />}
+                  title={<UserNameBox
+                    setDisplayName={this._setDisplayName.bind(this)}
+                    name={localStorage.getItem('irisMeet.userName')}
+                    charLimit={20} />}
                   containerElement={'HorizontalBox'}
-                  actionIcon={<IconButton><StarBorder color="rgb(0, 188, 212)" /></IconButton>}
                   titleStyle={styles.titleStyle}
                   titleBackground="linear-gradient(to top, rgba(0,0,0,0.7) 0%,rgba(0,0,0,0.3) 70%,rgba(0,0,0,0) 100%)"
                 >
@@ -902,8 +1079,9 @@ _setDisplayName(name) {
             <GridList className={"remoteGrid"} style={styles.gridList} cols={2.2}>
               {this.props.remoteVideos.map((connection) => {
                 if (connection) {
-                  let name = this.state.userData[this._truncateJid(connection.participantJid)] ? this.state.userData[this._truncateJid(connection.participantJid)].userName : null;
+                  const name = this.state.userData[this._truncateJid(connection.participantJid)] ? this.state.userData[this._truncateJid(connection.participantJid)].userName : null;
                   console.log("USERNAME TO DISPLAY: ", name)
+                  const jid = connection.participantJid;
                   let displayHorizontalBox = (!this._isDominant(connection.id) && this.props.remoteVideos.length > 1) || !this.props.enableDomSwitch;
                   console.log("Display HB for ", connection.id, "? -- ", displayHorizontalBox)
                   return displayHorizontalBox ? (
@@ -912,8 +1090,12 @@ _setDisplayName(name) {
                       rows={0.5}
                       key={connection.id}
                       style={styles.gridTile}
-                      title={name ? name : "Remote Video"}
-                      actionIcon={<IconButton><StarBorder color="rgb(0, 188, 212)" /></IconButton>}
+                      title={name ? <div>{name}</div> : "Remote Video"}
+                      actionIcon={<VideoActionIcons
+                        muteVideo={this.muteRemoteVideo}
+                        muteAudio={this.muteRemoteAudio}
+                        participantJid={jid}
+                        />}
                       titleStyle={styles.titleStyle}
                       titleBackground="linear-gradient(to top, rgba(0,0,0,0.7) 0%,rgba(0,0,0,0.3) 70%,rgba(0,0,0,0) 100%)"
                     >
@@ -938,7 +1120,11 @@ _setDisplayName(name) {
                     style={styles.gridTile}
                     key={connection.id}
                     title={name ? name : "Remote Video"}
-                    actionIcon={<IconButton><StarBorder color="rgb(0, 188, 212)" /></IconButton>}
+                    actionIcon={<VideoActionIcons
+                      muteVideo={this.muteRemoteVideo}
+                      muteAudio={this.muteRemoteAudio}
+                      participantJid={jid}
+                      />}
                     titleStyle={styles.titleStyle}
                     titleBackground="linear-gradient(to top, rgba(0,0,0,0.7) 0%,rgba(0,0,0,0.3) 70%,rgba(0,0,0,0) 100%)"
                   > <Avatar

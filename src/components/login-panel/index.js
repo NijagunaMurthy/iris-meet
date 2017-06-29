@@ -52,14 +52,15 @@ const LoginPanelComponent = ({showUser, userNameText, _onUserNameTextChange, sho
   <div id="main-login">
     <Paper style={stylePaper} zDepth={1} rounded={false}>
       <Paper style={enterRoomPaper} zDepth={1} rounded={false}>
-        <form onsubmit={onAction}>
+        <form onSubmit={onAction}>
           <div id="login-panel" className="form">
             {showUser === true ? <div className="form-group">
               <TextField
                 type="text"
+                autoComplete="off"
                 className="form-control"
                 id="userName"
-                hintText="Name"
+                hintText="Your name"
                 value={userNameText}
                 onChange={_onUserNameTextChange}
               />
@@ -68,9 +69,10 @@ const LoginPanelComponent = ({showUser, userNameText, _onUserNameTextChange, sho
               {showRoom === true ? <div className="form-group">
                 <TextField
                   type="text"
+                  autoComplete="off"
                   className="form-control"
                   id="roomName"
-                  hintText="Enter room name"
+                  hintText="Room name"
                   value={roomNameText}
                   onChange={_onRoomNameTextChange.bind(this)}
                 />

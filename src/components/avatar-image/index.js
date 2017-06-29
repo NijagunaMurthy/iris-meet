@@ -13,9 +13,15 @@ const options = {
   format: 'svg'
 };
 
-const avatarImage = {
-  width: '500px',
-  height: '600px',
+const avatarImageStyle = {
+  width: '50%',
+  height: '50%',
+  textAlign: "center",
+  verticalAlign: "middle",
+  display: "table",
+  margin: "0 auto",
+  maxHeight: "500px",
+  maxWidth: "500px"
 }
 
 class AvatarImage extends React.Component {
@@ -26,7 +32,7 @@ class AvatarImage extends React.Component {
 
   render() {
     return (
-      <img style={avatarImage} src={"data:image/svg+xml;base64, " + this.data} />
+      <img style={avatarImageStyle} src={"data:image/svg+xml;base64, " + this.data} />
     )
   }
 }
